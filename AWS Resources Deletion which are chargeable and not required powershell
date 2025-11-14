@@ -1,0 +1,70 @@
+Write-Host "WARNING: This will delete ALL chargeable AWS resources!" -ForegroundColor Red
+
+$regions = (aws ec2 describe-regions --query "Regions[].RegionName" --output text).Split()
+
+foreach ($region in $regions) {
+    Write-Host "`n============== REGION: $region ==============" -ForegroundColor Cyan
+
+    # ---------------------- EC2 INSTANCES ----------------------
+    Write-Host "Deleting EC2 Instances..."
+    $instances = (aws ec2 describe-instances --region $region --query "Reservations[].Instances[].InstanceId" --output text)
+    if ($instances) {
+        aws ec2 terminate-instances --instance-ids $instances --region $region
+    }
+
+    # ---------------------- EBS VOLUMES ------------------------
+    Write-Host "Deleting AVAILABLE EBS Volumes..."
+    $volumes = (aws ec2 describe-volumes --region $region --filters Name=status,Values=available --query "Volumes[].VolumeId" --output text)
+    foreach ($vol in $volumes.Split()) {
+        aws ec2 delete-volume --volume-id $vol --region $region
+    }
+
+    # ---------------------- ELASTIC IPS ------------------------
+    Write-Host "Releasing Elastic IPs..."
+    $eips = (aws ec2 describe-addresses --region $region --query "Addresses[].AllocationId" --output text)
+    foreach ($eip in $eips.Split()) {
+        aws ec2 release-address --allocation-id $eip --region $region
+    }
+
+    # ---------------------- LOAD BALANCERS ---------------------
+    Write-Host "Deleting Load Balancers..."
+    $loadBalancers = (aws elbv2 describe-load-balancers --region $region --query "LoadBalancers[].LoadBalancerArn" --output text)
+    foreach ($lb in $loadBalancers.Split()) {
+        aws elbv2 delete-load-balancer --load-balancer-arn $lb --region $region
+    }
+
+    # ---------------------- NAT GATEWAYS -----------------------
+    Write-Host "Deleting NAT Gateways..."
+    $natGateways = (aws ec2 describe-nat-gateways --region $region --query "NatGateways[].NatGatewayId" --output text)
+    foreach ($nat in $natGateways.Split()) {
+        aws ec2 delete-nat-gateway --nat-gateway-id $nat --region $region
+    }
+
+    # ---------------------- RDS INSTANCES ----------------------
+    Write-Host "Deleting RDS Databases..."
+    $databases = (aws rds describe-db-instances --region $region --query "DBInstances[].DBInstanceIdentifier" --output text)
+    foreach ($db in $databases.Split()) {
+        aws rds delete-db-instance --db-instance-identifier $db --skip-final-snapshot --region $region
+    }
+
+    # ---------------------- EKS CLUSTERS -----------------------
+    Write-Host "Deleting EKS Clusters..."
+    $clusters = (aws eks list-clusters --region $region --query "clusters[]" --output text)
+    foreach ($cluster in $clusters.Split()) {
+        aws eks delete-cluster --name $cluster --region $region
+    }
+}
+
+# ---------------------- S3 (OPTIONAL) -----------------------------
+Write-Host "`nDo you want to delete ALL S3 buckets also? (y/n)"
+$deleteS3 = Read-Host
+
+if ($deleteS3 -eq "y") {
+    Write-Host "Deleting ALL S3 buckets..."
+    $buckets = (aws s3api list-buckets --query "Buckets[].Name" --output text)
+    foreach ($bucket in $buckets.Split()) {
+        aws s3 rb s3://$bucket --force
+    }
+}
+
+Write-Host "`nAll chargeable resources deletion attempted across all regions." -ForegroundColor Green
