@@ -1,0 +1,44 @@
+$outputFile = "aws-charges-check.txt"
+"========== AWS CHARGEABLE RESOURCE CHECK ==========" | Out-File $outputFile
+
+$regions = (aws ec2 describe-regions --query "Regions[].RegionName" --output text).Split()
+
+foreach ($region in $regions) {
+
+    "==================== $region ====================" | Out-File $outputFile -Append
+
+    " --- EC2 Instances (Running/Stopped) ---" | Out-File $outputFile -Append
+    aws ec2 describe-instances --region $region `
+        --query "Reservations[].Instances[].[InstanceId,State.Name,InstanceType]" `
+        --output table | Out-File $outputFile -Append
+
+    " --- EBS Volumes (Chargeable even if EC2 deleted) ---" | Out-File $outputFile -Append
+    aws ec2 describe-volumes --region $region `
+        --query "Volumes[].[VolumeId,State,Size]" `
+        --output table | Out-File $outputFile -Append
+
+    " --- Elastic IPs (Chargeable if not attached) ---" | Out-File $outputFile -Append
+    aws ec2 describe-addresses --region $region --output table | Out-File $outputFile -Append
+
+    " --- Load Balancers (ALB/NLB) ---" | Out-File $outputFile -Append
+    aws elbv2 describe-load-balancers --region $region --output table `
+        | Out-File $outputFile -Append
+
+    " --- NAT Gateways (Very High Cost!!) ---" | Out-File $outputFile -Append
+    aws ec2 describe-nat-gateways --region $region `
+        --query "NatGateways[].[NatGatewayId,State]" `
+        --output table | Out-File $outputFile -Append
+
+    " --- RDS Databases ---" | Out-File $outputFile -Append
+    aws rds describe-db-instances --region $region --output table `
+        | Out-File $outputFile -Append
+
+    " --- EKS Clusters ---" | Out-File $outputFile -Append
+    aws eks list-clusters --region $region --output table `
+        | Out-File $outputFile -Append
+}
+
+"==================== GLOBAL SERVICES ====================" | Out-File $outputFile -Append
+
+" --- S3 Buckets (Check size in console) ---" | Out-File $outputFile -Append
+aws s3 ls | Out-File $outpu
